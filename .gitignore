@@ -1,0 +1,15 @@
+frames/
+include/
+lib/
+bin/
+shaders/dx11
+shaders/glsl
+*.exe
+*.zip
+*.lib
+*.dll
+*.so
+*.dylib
+*.DS_store
+shader_errors.txt
+trusslog.txt
