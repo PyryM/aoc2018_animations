@@ -9,6 +9,7 @@ shaders/glsl
 *.lib
 *.dll
 *.so
+*.mp4
 *.dylib
 *.DS_store
 shader_errors.txt

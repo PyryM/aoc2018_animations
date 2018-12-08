@@ -27,6 +27,7 @@ function BorderComp:nvg_draw(ctx)
   local y = 0.5 + math.floor((ctx.height - h) / 2)
 
   ctx:StrokeColor(ctx:RGBA(255, 255, 255, 255))
+  ctx:FillColor(ctx:RGBA(255, 255, 255, 255))
   ctx:StrokeWidth(1.0)
 
   local axis_pad = 14
@@ -45,9 +46,9 @@ function BorderComp:nvg_draw(ctx)
   ctx:TextAlign(ctx.ALIGN_RIGHT + ctx.ALIGN_MIDDLE)
   local botval = self.plot.plot_width * math.floor(self.plot.plot_height / 2)
   local topval = -botval
-  ctx:Text(x - 7, y,       tostring(topval), nil)
+  --ctx:Text(x - 7, y,       tostring(topval), nil)
   ctx:Text(x - 7, y + h/2, '0', nil)
-  ctx:Text(x - 7, y + h,   tostring(botval), nil)
+  --ctx:Text(x - 7, y + h,   tostring(botval), nil)
 
   ctx:BeginPath()
   ctx:Rect(x, y, w, h)
@@ -55,6 +56,10 @@ function BorderComp:nvg_draw(ctx)
   ctx:BeginPath()
   ctx:Rect(x - 2, y - 2, w + 4, h + 4)
   ctx:Stroke()
+
+  ctx:TextAlign(ctx.ALIGN_LEFT + ctx.ALIGN_TOP)
+  ctx:Text(x + 2, y + h + 20, string.format("Cycle: %d", self.plot.cycle_count), nil)
+  ctx:Text(x + 120, y + h + 20, string.format("Points: %d", self.plot.total_iterations), nil)
 
   if self.plot.hit_pos then
     local hitx = self.plot.hit_pos
@@ -69,13 +74,13 @@ function BorderComp:nvg_draw(ctx)
     ctx:Circle(hitx, hity, 3)
     ctx:Fill()
     ctx:BeginPath()
-    ctx:MoveTo(hitx, y + h + 10)
-    ctx:LineTo(hitx - 10, y + h + 20)
-    ctx:LineTo(hitx + 10, y + h + 20)
-    ctx:LineTo(hitx, y + h + 10)
-    ctx:Stroke()
-    ctx:TextAlign(ctx.ALIGN_MIDDLE + ctx.ALIGN_CENTER)
-    ctx:Text(hitx, y + h + 30, tostring(self.plot.hit_pos), nil)
+    ctx:MoveTo(hitx, y + h - 15)
+    ctx:LineTo(hitx - 3, y + h - 5)
+    ctx:LineTo(hitx + 3, y + h - 5)
+    ctx:LineTo(hitx, y + h - 15)
+    ctx:Fill()
+    ctx:TextAlign(ctx.ALIGN_CENTER + ctx.ALIGN_TOP)
+    ctx:Text(hitx, y + h + 3, tostring(self.plot.hit_pos), nil)
   end
 end
 local Border = ecs.promote("TextBox", BorderComp)
@@ -86,7 +91,9 @@ local plot = {
   hitlist = terralib.new(uint8[200000]),
   hitzero = 100000,
   plot_width = 500,
-  plot_height = 500
+  plot_height = 500,
+  cycle_count = 0,
+  total_iterations = 0
 }
 for idx = 0, plot.hitsize-1 do
   plot.hitlist[idx] = 0
@@ -112,6 +119,7 @@ end
 
 local function do_cycle(offsets, pos, inner_delay)
   local collision_pos = nil
+  local ndelays = 0
   for idx, offset in ipairs(offsets) do
     local colorv = idx % 300
     if hit(pos, colorv + 1) then
@@ -120,8 +128,19 @@ local function do_cycle(offsets, pos, inner_delay)
     end
     pos = pos + offset
     if inner_delay and inner_delay > 0 then
-      async.await_frames(inner_delay)
+      if inner_delay >= 1 then
+        async.await_frames(inner_delay)
+        ndelays = ndelays + 1
+      elseif idx % math.ceil(1.0 / inner_delay) == 0 then
+      --elseif math.random() < inner_delay then
+        async.await_frames(1)
+        ndelays = ndelays + 1
+      end
     end
+    plot.total_iterations = plot.total_iterations + 1
+  end
+  if ndelays == 0 then
+    async.await_frames(1)
   end
   return pos, collision_pos
 end
@@ -129,31 +148,26 @@ end
 local function launch_script()
   local offsets = require("day1input.lua")
   local pos, hit = 0, nil
-  resize_plot(350, 420)
-  for cycle = 1, 50 do
-    local delay = 0
-    if cycle == 1 then delay = 1 end
-    pos = do_cycle(offsets, pos, delay)
-    async.await_frames(3)
-  end
-  for cycle = 51, 144 do
-    pos, hit = do_cycle(offsets, pos, 0)
+  resize_plot(482, 420)
+  for cycle = 1, 145 do
+    plot.cycle_count = cycle - 1
+    local delay = (1.0 / 16.0) / math.min(cycle, 50)
+    if cycle > 142 then
+      delay = delay + (cycle - 142)*0.05
+    end
+    --if cycle == 1 then delay = 0.25 end
+    pos, hit = do_cycle(offsets, pos, delay)
     if hit then
       print("HIT: " .. hit)
       plot.hit_pos = hit
       break
     end
-    local delay_frames = 3
-    if cycle > 130 then
-      delay_frames = (cycle - 130)*3
-    end
-    async.await_frames(delay_frames)
   end
   async.await_frames(60)
   local startw = plot.plot_width
   for i = startw, 500 do
     resize_plot(i, 420)
-    async.await_frames(2)
+    async.await_frames(1)
   end
 end
 
@@ -192,6 +206,11 @@ function init()
 
   local border = myapp.scene:create_child(Border, "border", {
     plot = plot
+  })
+
+  local attrib_label = myapp.scene:create_child(require("textlabel.t").TextLabel, "attrib", {
+    x = width - 5, y = height - 4, color = {0.5, 0.5, 0.5, 1.0}, text = "AoC Day 1 [mtknn]", fontsize = 12,
+    align = "right", shadow = {0.0, 0.0, 0.0, 1.0}
   })
 end
 
@@ -250,7 +269,7 @@ function update_map()
   map_tex:update()
 end
 
-local writing_frames = false
+local writing_frames = true
 local f = 0
 
 function update()
