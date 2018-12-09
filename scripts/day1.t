@@ -9,6 +9,32 @@ local flat = require("material/flat.t")
 local ecs = require("ecs")
 
 local width, height = 512, 512
+local SCALE = 32
+
+local COLORS = {
+  {100, 100, 100}
+}
+COLORS[10] = {255, 255, 255}
+local _base_colors = {
+  {100, 100, 100}, {150, 150, 150}, {200, 200, 200}
+}
+
+local function fade_color(c, alpha)
+  return {c[1]*alpha, c[2]*alpha, c[3]*alpha}
+end
+
+for i = 0, 127 do
+  local alpha = 0.2 + 0.8 * (i/127)
+  local blue = fade_color({20, 255, 255}, 1.0 - alpha)
+  local orange = fade_color({255, 200, 20}, 1.0 - alpha)
+  local purple = fade_color({255, 20, 200}, 1.0 - alpha)
+  local green = fade_color({20, 255, 20}, 1.0 - alpha)
+
+  COLORS[128*0 + i + 11] = blue 
+  COLORS[128*1 + i + 11] = purple
+  COLORS[128*2 + i + 11] = orange
+  COLORS[128*3 + i + 11] = green
+end
 
 local BorderComp = graphics.NanoVGComponent:extend("BorderComp")
 function BorderComp:init(options)
@@ -21,8 +47,12 @@ function BorderComp:nvg_draw(ctx)
   ctx:FontFace("sans")
   ctx:FontSize(18)
 
-  local w = (self.plot.plot_width / 512) * ctx.width
-  local h = (self.plot.plot_height / 512) * ctx.height
+  local scale2 = SCALE * 2
+
+  local plot_pixel_size = (1.0 / scale2) * ctx.width
+
+  local w = (self.plot.plot_width / scale2) * ctx.width
+  local h = (self.plot.plot_height / scale2) * ctx.height
   local x = 0.5 + math.floor((ctx.width - w) / 2)
   local y = 0.5 + math.floor((ctx.height - h) / 2)
 
@@ -44,11 +74,11 @@ function BorderComp:nvg_draw(ctx)
   ctx:Text(x + w/2, y - axis_pad, tostring(self.plot.plot_width), nil)
 
   ctx:TextAlign(ctx.ALIGN_RIGHT + ctx.ALIGN_MIDDLE)
-  local botval = self.plot.plot_width * math.floor(self.plot.plot_height / 2)
-  local topval = -botval
-  --ctx:Text(x - 7, y,       tostring(topval), nil)
+  local botval = self.plot.plot_width * math.floor((self.plot.plot_height - 1) / 2)
+  local topval = -self.plot.plot_width * math.floor((self.plot.plot_height - 1) / 2)
+  ctx:Text(x - 7, y + plot_pixel_size/2,       tostring(topval), nil)
   ctx:Text(x - 7, y + h/2, '0', nil)
-  --ctx:Text(x - 7, y + h,   tostring(botval), nil)
+  ctx:Text(x - 7, y + h - plot_pixel_size/2,   tostring(botval), nil)
 
   ctx:BeginPath()
   ctx:Rect(x, y, w, h)
@@ -58,18 +88,38 @@ function BorderComp:nvg_draw(ctx)
   ctx:Stroke()
 
   ctx:TextAlign(ctx.ALIGN_LEFT + ctx.ALIGN_TOP)
-  ctx:Text(x + 2, y + h + 20, string.format("Cycle: %d", self.plot.cycle_count), nil)
-  ctx:Text(x + 120, y + h + 20, string.format("Points: %d", self.plot.total_iterations), nil)
+  ctx:Text(x + w + 5, y + h - 35, string.format("Cycle: %d", self.plot.cycle_count), nil)
+  local point_color = COLORS[self.plot.cur_color] or {255, 0, 0}
+  ctx:FillColor(ctx:RGB(unpack(point_color)))
+  ctx:Text(x + w + 5, y + h - 15, string.format("Position: %d", self.plot.last_pos), nil)
+
+  local ox = x + (w/2) - (self.plot.offset_chars/2)*10
+  ctx:FillColor(ctx:RGB(255, 255, 255))
+  ctx:Text(ox, y+h+20, "[", nil)
+  ox = ox + 20
+  for idx, offset in ipairs(self.plot.offsets) do
+    local ostr = tostring(offset) .. " "
+    if offset >= 0 then ostr = "+" .. ostr end
+    local colorv = 11 + ((idx % 4) * 128)
+    if idx ~= self.plot.offset_idx then
+      colorv = colorv + 60
+    end
+    ctx:FillColor(ctx:RGB(unpack(COLORS[colorv])))
+    ctx:Text(ox, y + h + 20, ostr, nil)
+    ox = ox + ctx:TextBounds(ox, y + h + 20, ostr, nil, nil)
+  end
+  ctx:FillColor(ctx:RGB(255, 255, 255))
+  ctx:Text(ox+5, y+h+20, "]", nil)
 
   if self.plot.hit_pos then
     local hitx = self.plot.hit_pos
     local hity = math.floor(self.plot.hit_pos / self.plot.plot_width)
-    hitx = ((hitx % self.plot.plot_width) / 512) * ctx.width
+    hitx = (((hitx % self.plot.plot_width) + 0.5) / scale2) * ctx.width
     hitx = hitx + x
-    hity = (hity / 512) * ctx.height
+    hity = ((hity) / scale2) * ctx.height
     hity = hity + y + h/2
     ctx:StrokeColor(ctx:RGB(255, 0, 0))
-    ctx:FillColor(ctx:RGB(255, 0, 0))
+    ctx:FillColor(ctx:RGB(255, 255, 255))
     ctx:BeginPath()
     ctx:Circle(hitx, hity, 3)
     ctx:Fill()
@@ -88,12 +138,16 @@ local Border = ecs.promote("TextBox", BorderComp)
 local map_tex = nil
 local plot = {
   hitsize = 200000,
-  hitlist = terralib.new(uint8[200000]),
+  hitlist = terralib.new(uint16[200000]),
   hitzero = 100000,
   plot_width = 500,
   plot_height = 500,
   cycle_count = 0,
-  total_iterations = 0
+  total_iterations = 0,
+  cur_color = 0,
+  last_pos = 0,
+  offsets = {1, 1, 1},
+  offset_idx = 1
 }
 for idx = 0, plot.hitsize-1 do
   plot.hitlist[idx] = 0
@@ -120,9 +174,18 @@ end
 local function do_cycle(offsets, pos, inner_delay)
   local collision_pos = nil
   local ndelays = 0
+  local colorv = 0
+  --local cycle_color_offset = (plot.cycle_count % 4) * 128
   for idx, offset in ipairs(offsets) do
-    local colorv = idx % 300
-    if hit(pos, colorv + 1) then
+    --colorv = cycle_color_offset + (math.floor(idx/4) % 128)
+    colorv = plot.cycle_count*10 + ((idx % 4) * 128)
+    local had_hit = hit(pos, colorv + 1)
+    plot.last_pos = pos
+    plot.cur_color = colorv + 11
+    plot.total_iterations = plot.total_iterations + 1
+    plot.offset_idx = idx
+    plot.offsets = offsets
+    if had_hit then
       collision_pos = pos
       break
     end
@@ -137,7 +200,6 @@ local function do_cycle(offsets, pos, inner_delay)
         ndelays = ndelays + 1
       end
     end
-    plot.total_iterations = plot.total_iterations + 1
   end
   if ndelays == 0 then
     async.await_frames(1)
@@ -146,12 +208,25 @@ local function do_cycle(offsets, pos, inner_delay)
 end
 
 local function launch_script()
-  local offsets = require("day1input.lua")
+  --local offsets = require("day1input.lua")
+  local offsets = {-61, 108, 45, -75} --, -4}
+  plot.offset_chars = #("[-61 +108 +45 -75]")
+  plot.offset_sum = 17
+
   local pos, hit = 0, nil
-  resize_plot(482, 420)
+  resize_plot(10, 51)
   for cycle = 1, 145 do
     plot.cycle_count = cycle - 1
-    local delay = (1.0 / 16.0) / math.min(cycle, 50)
+    --local delay = (1.0 / 4.0) / math.min(cycle, 50)
+    if cycle == 3 then
+      local startw = plot.plot_width
+      for i = startw, 17 do
+        resize_plot(i, 51)
+        async.await_frames(5)
+      end
+    end
+
+    local delay = 15
     if cycle > 142 then
       delay = delay + (cycle - 142)*0.05
     end
@@ -163,12 +238,8 @@ local function launch_script()
       break
     end
   end
-  async.await_frames(60)
-  local startw = plot.plot_width
-  for i = startw, 500 do
-    resize_plot(i, 420)
-    async.await_frames(1)
-  end
+  -- async.await_frames(60)
+
 end
 
 function init()
@@ -177,7 +248,7 @@ function init()
     clear_color = 0x000000ff, stats = false
   }
 
-  myapp.camera:make_orthographic(-256, 256, -256, 256, 0.1, 30.0)
+  myapp.camera:make_orthographic(-SCALE, SCALE, -SCALE, SCALE, 0.1, 30.0)
   myapp.camera.position:set(0.0, 0.0, 1.0)
   myapp.camera:update_matrix()
 
@@ -214,25 +285,6 @@ function init()
   })
 end
 
-local COLORS = {
-  {100, 100, 100},
-}
-COLORS[10] = {255, 255, 255}
-local _base_colors = {
-  {100, 100, 100}, {150, 150, 150}, {200, 200, 200}
-}
-for i = 1, 500 do
-  local alpha = i/150
-  --if i % 2 == 0 then alpha = 1.0 - alpha end
-  alpha = 1.0 - alpha
-  alpha = 0.5 + 0.5*alpha
-  -- COLORS[i+10] = {0,
-  --                  math.floor(255*alpha), --math.floor(255*(1.0-alpha)),
-  --                  math.floor(255*alpha)}
-  COLORS[i+10] = _base_colors[(i % 3)+1]
-  --{0, math.random(128,255), 0}
-end
-
 function update_map()
   local cdata = map_tex.cdata
   local nhits = plot.hitsize
@@ -254,8 +306,8 @@ function update_map()
         if srcpos >= 0 and srcpos < nhits then
           local v = hits[srcpos]
           if v > 0 then
-            color = COLORS[v+9] 
-            --if not color then truss.error("EH? " .. v+10) end
+            color = COLORS[v+11] 
+            if not color then truss.error("EH? " .. v+9) end
           end
         end 
       end
@@ -269,7 +321,7 @@ function update_map()
   map_tex:update()
 end
 
-local writing_frames = true
+local writing_frames = false
 local f = 0
 
 function update()
@@ -281,3 +333,5 @@ function update()
   end
   f = f + 1
 end
+
+--avconv -r 30 -f image2 -i frame_%04d.png -c:v libx264 -preset veryslow -crf 18 -pix_fmt yuv420p ../day1_p1.mp4
