@@ -1,4 +1,4 @@
--- day3.t
+-- day10.t
 
 local app = require("app/app.t")
 local geometry = require("geometry")
@@ -94,16 +94,8 @@ function grid_zoomer()
     dt = dt + 0.05
     stars:set_time(t)
     tlabel:set_text(string.format("%0.2f", t))
-    --grid:set_bounds(stars:get_bounds())
     async.await_frames(1)
   end
-
-  -- local ss = 10000
-  -- while ss > 10 do
-  --   ss = ss * 0.99
-  --   grid:set_bounds{x0 = -1, x1 = ss, y0 = -1, y1 = ss}
-  --   async.await_frames(1)
-  -- end
 end
 
 function init()
@@ -137,7 +129,7 @@ function init()
   async.run(grid_zoomer)
 end
 
-local writing_frames = true
+local writing_frames = false
 local f = 0
 
 function update()
