@@ -14,6 +14,7 @@ function TextLabelComp:init(options)
   self.y = options.y or 50
   self.align = options.align
   self.shadow = options.shadow
+  self.z_order = options.z_order or -1.0
 end
 
 function TextLabelComp:set_text(newtext)
