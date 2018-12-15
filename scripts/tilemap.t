@@ -13,16 +13,17 @@ function m.grid_tile_data(opts)
   local position, texcoord0, texcoord1 = {}, {}, {}
   local indices = {}
 
-  local function add_tile(x, y, w, h, data_u, data_v)
+  local function add_tile(x, y, w, h, data_u, data_v, margin)
     local startidx = #position
+    margin = margin or 0.0
     table.insert(position, Vector(x, y))
     table.insert(position, Vector(x+w, y))
     table.insert(position, Vector(x+w, y+h))
     table.insert(position, Vector(x, y+h))
-    table.insert(texcoord1, Vector(0,1))
-    table.insert(texcoord1, Vector(1,1))
-    table.insert(texcoord1, Vector(1,0))
-    table.insert(texcoord1, Vector(0,0))
+    table.insert(texcoord1, Vector(0+margin,1-margin))
+    table.insert(texcoord1, Vector(1-margin,1-margin))
+    table.insert(texcoord1, Vector(1-margin,0+margin))
+    table.insert(texcoord1, Vector(0+margin,0+margin))
     table.insert(texcoord0, Vector(data_u, data_v))
     table.insert(texcoord0, Vector(data_u, data_v))
     table.insert(texcoord0, Vector(data_u, data_v))
@@ -42,7 +43,7 @@ function m.grid_tile_data(opts)
     for col = 0, opts.cols - 1 do
       local x = x0 + col*tilew
       local y = y0 - (row+1)*tileh
-      add_tile(x, y, tilew, tileh, col, row)
+      add_tile(x, y, tilew, tileh, col, row, opts.margin or 0.0)
     end
   end
 
@@ -109,6 +110,7 @@ function TilemapComponent:_create_material(opts)
     mat.uniforms.u_tileParams:set(1.0 / (self.font_cols or 32.0), 
                                   1.0 / (self.font_rows or 4.0))
   end
+  if opts.program then mat:set_program(opts.program) end
 
   return mat
 end
