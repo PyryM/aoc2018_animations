@@ -17,7 +17,7 @@ local math = require("math")
 local ecs = require("ecs")
 
 local ROWS, COLS = 150, 150
-local writing_frames = true
+local writing_frames = false
 
 local Cart = class("Cart")
 
@@ -205,7 +205,8 @@ function Cart:tick()
   self.prev_direction = self.direction
   self.delta_direction = 0
 
-  self.occupancy[self:position_index()] = nil
+  local occupancy_index = self:position_index()
+  self.occupancy[occupancy_index] = nil
   local tiletype = self.map:get_tile(self.x, self.y)
   if tiletype == INTERSECTION then
     local ddir = CART_DIRS[self.intersection_index + 1]
@@ -214,37 +215,38 @@ function Cart:tick()
     self.intersection_index = (self.intersection_index + 1) % (#CART_DIRS)
   elseif CURVES[tiletype] then
     self.direction, self.delta_direction = apply_curve(self.direction, tiletype)
-  elseif STRAIGHTS[tiletype] then
-    -- direction remains unchanged
-  else
-    truss.error("Cart hit tiletype: ", tiletype)
+  elseif not STRAIGHTS[tiletype] then
+    truss.error("Cart hit unexpected tiletype: " .. tiletype)
   end
   local dx, dy = unpack(DIRECTIONS[self.direction+1])
   self.x = self.x + dx
   self.y = self.y + dy
-  if self.occupancy[self:position_index()] then
+  if self.occupancy[occupancy_index] then
     print("Collision: ", self.idx, self.x, self.y)
     self.dead = true
-    self.occupancy[self:position_index()].dead = true
-    self.occupancy[self:position_index()] = nil
+    self.occupancy[occupancy_index].dead = true
+    self.occupancy[occupancy_index] = nil
   else
-    self.occupancy[self:position_index()] = self
+    self.occupancy[occupancy_index] = self
   end
   return not self.dead
 end
 
-function Cart:get_world_pos(x, y)
-  fx, fy = (x+0.5) / COLS, (y+0.5) / ROWS
-  --fy = 1.0 - fy
+local function get_world_pos(tile_x, tile_y)
+  fx, fy = (tile_x+0.5) / COLS, (tile_y+0.5) / ROWS
   return fx * 2.0 - 1.0, 0.002, fy * 2.0 - 1.0
 end
 
-function Cart:get_world_euler(dir)
-  return {x = -math.pi/2.0, y = -0.5*(dir-1)*math.pi, z = 0}
+local function get_world_euler(tile_direction)
+  return {
+    x = -math.pi/2.0, 
+    y = -0.5*(tile_direction-1)*math.pi, 
+    z = 0
+  }
 end
 
-function Cart:animate(nframes, entity)
-  entity = entity or self.entity
+function Cart:animate(nframes)
+  local entity = self.entity
   if self.dead then 
     if not self.flickered then
       self.flickered = true
@@ -260,8 +262,8 @@ function Cart:animate(nframes, entity)
   end
 
   if (nframes or 0) < 1 then
-    entity.position:set(self:get_world_pos(self.x, self.y))
-    entity.quaternion:euler(self:get_world_euler(self.direction), 'ZYX')
+    entity.position:set(get_world_pos(self.x, self.y))
+    entity.quaternion:euler(get_world_euler(self.direction), 'ZYX')
     entity:update_matrix()
     return true
   end
@@ -273,7 +275,7 @@ function Cart:animate(nframes, entity)
     if self.delta_direction ~= 0 then
       for f = 1, nframes/2 do
         cur:lincomb(next, prev, 2*f/nframes)
-        entity.quaternion:euler(self:get_world_euler(cur.elem.z), 'ZYX')
+        entity.quaternion:euler(get_world_euler(cur.elem.z), 'ZYX')
         entity:update_matrix()
         async.await_frames(1)
       end
@@ -281,7 +283,7 @@ function Cart:animate(nframes, entity)
     end
     for f = 1, nframes do
       cur:lincomb(next, prev, f/nframes)
-      entity.position:set(self:get_world_pos(cur.elem.x, cur.elem.y))
+      entity.position:set(get_world_pos(cur.elem.x, cur.elem.y))
       entity:update_matrix()
       if self.follower then
         self.follower.position:copy(entity.position)
@@ -358,8 +360,6 @@ function init()
         color = color,
         texture = cartex, sprite_width = 256, sprite_height = 256, width = 256, height = 256
       })
-      --layer.position:set(0.0, 0.0, i/10 - 0.3)
-      --layer:update_matrix()
       layer.sprite.tags.lightpass = true
     end
     carsprite.scale:set(0.03, 0.03, 0.03)
