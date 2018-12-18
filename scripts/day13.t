@@ -370,16 +370,16 @@ function init()
     cart:animate()
   end
 
-  --local watch_cart = carts[9]
-  --watch_cart.follower = camroot
+  local watch_cart = carts[9]
+  watch_cart.follower = camroot
 
   async.run(function()
     while true do
       trackmap:tick_carts()
       for _, cart in ipairs(carts) do
-        cart:animate(0)
+        cart:animate(10)
       end
-      async.await_frames(1)
+      async.await_frames(11)
     end
   end):next(print, print)
 end
